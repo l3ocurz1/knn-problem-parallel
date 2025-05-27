@@ -4,30 +4,11 @@
 #include <sys/time.h>
 #include <stdbool.h>
 
-
-typedef struct point_st {  //definizione strutture
+typedef struct point_st {
     double x;
     double y;
     double z;
-}t_point; // alias per definire una variabile
- 
-
-t_point* allocPoint() {
-    t_point* point = (t_point*)malloc(sizeof(t_point));
-    point->x = 0.0;
-    point->y = 0.0;
-    point->z = 0.0;
-    return point;
-}
-
-void freePoint(t_point* point) {
-    if (point != NULL) {
-        point->x = 0.0;
-        point->y = 0.0;
-        point->z = 0.0;
-    }
-    free(point);
-}
+}t_point;
 
 double euclideanDistance(t_point* point1, t_point* point2) {
     double x = point1->x - point2->x;
@@ -50,14 +31,32 @@ int get_matrix_position(int row, int col, int n_col){
     return offset + col;
 }
 
-void right_shift_from_position(int *neigh, double *dist,int neigh_number,int from_pos,int point_idx){
-    int r;
-    for (r = neigh_number - 1; r > from_pos; r--){
-        int current_pos = get_matrix_position(point_idx,r,neigh_number);
-        int prev_pos = get_matrix_position(point_idx,r-1,neigh_number);
-        dist[current_pos] = dist[prev_pos];
-        neigh[current_pos] = neigh[prev_pos];
+int find_position(double *array, int left, int right, double to_insert){
+    while (left <= right){
+        int mid = (left + right) / 2;
+
+        if (array[mid] == to_insert){
+            return mid;
+        }
+        else if (array[mid] < to_insert){
+            left = mid + 1;
+        }
+        else{
+            right = mid - 1;
+        }
     }
+    return left;
+}
+
+void insert_value(double *array, int *array2, int array_dim, double distance_to_insert,int neigh_to_insert,int idx_point){
+    int position = find_position(array, idx_point*array_dim , (idx_point+1)*array_dim - 1, distance_to_insert);
+    int i;
+    for (i = (idx_point+1)*array_dim - 1; i > position; i--){
+        array[i] = array[i - 1];
+        array2[i] = array2[i - 1];
+    }
+    array[position] = distance_to_insert;
+    array2[position] = neigh_to_insert;
 }
 
 void print_error_argc(int argc){
@@ -79,12 +78,12 @@ int get_offset(int row , int col, int matrix_dim){
     } if (row > col) return get_offset(col,row,matrix_dim);
 }
 
-double read_value_matrix2(double *matrix,int row,int col,int n_cols){
+double read_value_matrix(double *matrix,int row,int col,int n_cols){
     int offset = get_offset(row,col,n_cols);
     return matrix[offset];
 }
 
-void write_value_matrix2(double *matrix,int row,int col,int n_cols, double to_set){
+void write_value_matrix(double *matrix,int row,int col,int n_cols, double to_set){
     int offset = get_offset(row,col,n_cols);
     matrix[offset] = to_set;
 }
@@ -104,11 +103,6 @@ void fill_default_values(double *neigh_distance, int *neigh_idxes,int num_neigh,
     }
 }
 
-void set_values_to_neigh(double *neigh_distances, int *neigh_idxes,int num_neigh,double distance,int point_idx,int from_pos,int neigh_idx){
-    neigh_distances[get_matrix_position(point_idx, from_pos, num_neigh)] = distance;
-    neigh_idxes[get_matrix_position(point_idx, from_pos, num_neigh)] = neigh_idx;
-}
-
 void load_points_from_file(char *file_name, t_point *points,int num_points)
 {
     FILE *points_file = fopen(file_name, "r");
@@ -122,18 +116,6 @@ void load_points_from_file(char *file_name, t_point *points,int num_points)
     fclose(points_file);
 }
 
-void print_neighbours_matrix(double *distances, int *idxes, int K, int N) {
-    int i, j;
-    for (i = 0; i < N; i++) {
-        printf("Point %d:\n", i);
-        for (j = 0; j < K; j++) {
-            int pos = get_matrix_position(i, j, K);
-            printf("  Neighbour %d -> idx: %d, dist: %f\n", j, idxes[pos], distances[pos]);
-        }
-        printf("\n");
-    }
-}
-
 int main(int argc, char **argv){
     if(argc < 3 || argc > 4) {
         print_error_argc(argc);
@@ -141,7 +123,6 @@ int main(int argc, char **argv){
     }
     int N = atoi(argv[1]);
     int K = atoi(argv[2]);
-
     if(K>=N){
         print_error_neighbours(N,K);
         return -1;
@@ -156,34 +137,30 @@ int main(int argc, char **argv){
     fill_default_values(neigh_distances_matrix,neighs_matrix,K,N);
 
     //TIME
-    double start = actual_time();
+    double tick = actual_time();
 
     //COMPUTATION
-    int i,j,h;
+    int i,j;
     for (i = 0; i < N; i++){
         for (j = 0; j < N; j++){
-            if(i == j) continue; 
-                double dist = euclideanDistance(&points[i],&points[j]);
-                for (h = 0; h < K; h++){
-                    double neigh_dist = neigh_distances_matrix[get_matrix_position(i,h,K)];
-                    if(dist < neigh_dist){
-                        right_shift_from_position(neighs_matrix,neigh_distances_matrix,K,h,i);
-                        set_values_to_neigh(neigh_distances_matrix,neighs_matrix,K,dist,i,h,j);
-                        break;
-                    }
-                }
-        }
-        print_neighbours_matrix(neigh_distances_matrix, neighs_matrix, K, N);
-    }
-    double time_to_execute = actual_time() - start;
-    printf("N=%d , K=%d -> Time elapsed: %lf seconds\n",N,K,time_to_execute);
+            if(i == j) continue;
 
-    FILE *results_file = fopen("resultsSequential.txt","a+");
-    fprintf(results_file, "(N=%d) (K=%d)\t	Time Execution=%lf\n", N, K, time_to_execute);
+                double dist = euclideanDistance(&points[i],&points[j]);
+
+                insert_value(neigh_distances_matrix,neighs_matrix,K,dist,j,i);
+
+        }
+    }
+    double finish = actual_time() - tick;
+    printf("N=%d , K=%d -> Time elapsed: %lf seconds\n",N,K,finish);
+    FILE *results_file = fopen("resultsSequential2-1.txt","a+");
+    fprintf(results_file, "(N=%d) (K=%d)\t	Max Time=%lf\n", N, K, finish);
     fclose(results_file);
 
     free(neigh_distances_matrix);
     free(neighs_matrix);
+
     free(points);
 return EXIT_SUCCESS;
 }
+
